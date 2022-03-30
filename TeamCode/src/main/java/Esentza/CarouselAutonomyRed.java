@@ -1,0 +1,310 @@
+package Esentza;
+
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.config.Config;
+import com.acmerobotics.roadrunner.geometry.Pose2d;
+import com.acmerobotics.roadrunner.geometry.Vector2d;
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
+
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.stream.CameraStreamServer;
+import org.firstinspires.ftc.teamcode.drive.DriveConstants;
+import org.firstinspires.ftc.teamcode.drive.SampleMecanumDrive;
+import org.firstinspires.ftc.teamcode.trajectorysequence.TrajectorySequence;
+import org.openftc.easyopencv.OpenCvCamera;
+import org.openftc.easyopencv.OpenCvCameraFactory;
+import org.openftc.easyopencv.OpenCvCameraRotation;
+
+@Config
+@Autonomous(name = "Autonomie Rosu Carousel", group = "Autonomii Esentza")
+public class CarouselAutonomyRed extends LinearOpMode {
+
+   public static OpenCvCamera webcam;
+   MarkerDeterminationExample.MarkerDeterminationPipeline pipeline;
+
+   public static int WIDTH = 864, H = 480;
+
+   public void initCam() {
+      int cameraMonitorViewId = hardwareMap.appContext.getResources().getIdentifier("cameraMonitorViewId", "id", hardwareMap.appContext.getPackageName());
+      webcam = OpenCvCameraFactory.getInstance().createWebcam(hardwareMap.get(WebcamName.class, "Webcam 1"), cameraMonitorViewId);
+      pipeline = new MarkerDeterminationExample.MarkerDeterminationPipeline();
+      webcam.setPipeline(pipeline);
+
+      // We set the viewport policy to optimized view so the preview doesn't appear 90 deg
+      // out when the RC activity is in portrait. We do our actual image processing assuming
+      // landscape orientation, though.
+      webcam.setViewportRenderingPolicy(OpenCvCamera.ViewportRenderingPolicy.OPTIMIZE_VIEW);
+
+      webcam.openCameraDeviceAsync(new OpenCvCamera.AsyncCameraOpenListener() {
+         @Override
+         public void onOpened() {
+            webcam.startStreaming(WIDTH, H, OpenCvCameraRotation.UPRIGHT);
+            FtcDashboard.getInstance().startCameraStream(webcam, 0);
+            CameraStreamServer.getInstance().setSource(webcam);
+         }
+
+         @Override
+         public void onError(int errorCode) {
+            /*
+             * This will be called if the camera could not be opened
+             */
+         }
+      });
+   }
+
+   public static double LEVEL1_DISTANCE = 8.5;
+   public static double LEVEL2_DISTANCE = 13;
+   public static double LEVEL3_DISTANCE = 22;
+   public static double LIFT_DISTANCE = 22;
+   public static double LIFT_POWER = 1;
+   public static double LIFT_MARKER_LEVEL = 16;
+   public static double CLAW_POSITION_CLOSED = 0.7;
+   public static double CLAW_POSITION = 0.7;
+   public static double CLAW_POSITION_OPEN = 1;
+   public static double INTAKE_POWER = 10000;
+
+   public static double ARM_POSITION_OPEN = 0;
+   public static double ARM_POSITION_CLOSED = 0.725;
+   public static double ARM_POSITION = 0.725;
+
+   public static double CAROUSEL_POWER = -1;
+
+   public enum DRIVE_ENUM {
+      TRAJECTORY_0,
+      TRAJECTORY_1,
+      TRAJECTORY_2,
+      TRAJECTORY_3,
+      TRAJECTORY_4,
+      TRAJECTORY_5,
+      IDLE
+   }
+
+   public enum LIFT_ENUM {
+      UP,
+      DOWN,
+      LIFTING,
+      RESET,
+      IDLE
+   }
+
+   public enum INTAKE_ENUM {
+      FORWARD,
+      RUN,
+      REVERSE,
+      IDLE
+   }
+
+   LIFT_ENUM liftEnum = LIFT_ENUM.IDLE;
+   INTAKE_ENUM intakeEnum = INTAKE_ENUM.IDLE;
+   DRIVE_ENUM driveEnum = DRIVE_ENUM.TRAJECTORY_0;
+
+   @Override
+   public void runOpMode() {
+      CameraStorage.x1 = 30;
+      CameraStorage.y1 = 200;
+      CameraStorage.x2 = 250;
+      CameraStorage.y2 = 200;
+      CameraStorage.x3 = 430;
+      CameraStorage.y3 = 200;
+
+      Lift lift = new Lift(hardwareMap);
+      Intake intake = new Intake(hardwareMap);
+      SampleMecanumDrive drive = new SampleMecanumDrive(hardwareMap);
+
+      LIFT_MARKER_LEVEL = LEVEL3_DISTANCE;
+      CLAW_POSITION = CLAW_POSITION_OPEN;
+
+      initCam();
+
+      lift.setClawPosition(CLAW_POSITION_CLOSED);
+      lift.setArmPosition(ARM_POSITION_CLOSED);
+
+      drive.setPoseEstimate(new Pose2d());
+
+      TrajectorySequence trajectory0 = drive.trajectorySequenceBuilder(new Pose2d())
+              .addDisplacementMarker(() -> liftEnum = LIFT_ENUM.UP)
+              .lineTo(new Vector2d(25, -15.1))
+              .lineTo(new Vector2d(25, -47.1))
+              .build();
+
+
+      TrajectorySequence trajectory1 = drive.trajectorySequenceBuilder(trajectory0.end())
+              .addDisplacementMarker(()->lift.setArmPosition(ARM_POSITION_OPEN))
+              .lineTo(new Vector2d(0, -42.1))
+              .build();
+
+
+      TrajectorySequence trajectory2 = drive.trajectorySequenceBuilder(trajectory1.end())
+              .lineTo(new Vector2d(25, -47.98))
+              .addDisplacementMarker(5, ()->
+              {
+                 lift.setArmPosition(0.5);
+                 LIFT_DISTANCE = 13;
+                 liftEnum = LIFT_ENUM.UP;
+              })
+              .addDisplacementMarker(20, ()->
+              {
+                 lift.setArmPosition(0.5);
+                 LIFT_DISTANCE = 0;
+                 liftEnum = LIFT_ENUM.DOWN;
+              })
+              .addDisplacementMarker(40, ()-> lift.setArmPosition(ARM_POSITION_OPEN))
+              .lineTo(new Vector2d(24.725, -5))
+              .lineTo(new Vector2d(25.225, -1.5),
+                      SampleMecanumDrive.getVelocityConstraint(20, DriveConstants.MAX_ANG_VEL, DriveConstants.TRACK_WIDTH),
+                      SampleMecanumDrive.getAccelerationConstraint(DriveConstants.MAX_ACCEL))
+              .addDisplacementMarker(()->lift.setCarouselPower(CAROUSEL_POWER))
+              .build();
+
+      TrajectorySequence trajectory3 = drive.trajectorySequenceBuilder(trajectory2.end())
+              .addDisplacementMarker(()->lift.setArmPosition(0.17))
+              .lineToLinearHeading(new Pose2d(5, -17, Math.toRadians(-90)))
+              .lineTo(new Vector2d(5, -13))
+              .lineTo(new Vector2d(25, -12),
+                      SampleMecanumDrive.getVelocityConstraint(25, DriveConstants.MAX_ANG_VEL, DriveConstants.TRACK_WIDTH),
+                      SampleMecanumDrive.getAccelerationConstraint(DriveConstants.MAX_ACCEL))
+              .build();
+
+      TrajectorySequence trajectory4 = drive.trajectorySequenceBuilder(trajectory3.end())
+              .lineTo(new Vector2d(27, -50))
+              .addDisplacementMarker(()->
+              {
+                 lift.setArmPosition(0.55);
+                 LIFT_DISTANCE = LEVEL3_DISTANCE;
+                 liftEnum = LIFT_ENUM.UP;
+              })
+              .lineToLinearHeading(new Pose2d(-1, -42.1, Math.toRadians(0)))
+              .build();
+
+      TrajectorySequence trajectory5 = drive.trajectorySequenceBuilder(trajectory4.end())
+              .addDisplacementMarker(2, ()->lift.setArmPosition(ARM_POSITION_CLOSED))
+              .lineTo(new Vector2d(28, -31))
+              .build();
+
+      telemetry.addData("Position", pipeline.getAnalysis());
+      telemetry.update();
+
+      waitForStart();
+
+      MarkerDeterminationExample.MarkerDeterminationPipeline.SkystonePosition pos = pipeline.getAnalysis();
+
+      if (pos == MarkerDeterminationExample.MarkerDeterminationPipeline.SkystonePosition.LEFT)
+         LIFT_MARKER_LEVEL = LEVEL1_DISTANCE;
+
+
+      else if (pos == MarkerDeterminationExample.MarkerDeterminationPipeline.SkystonePosition.CENTER)
+         LIFT_MARKER_LEVEL = LEVEL2_DISTANCE;
+
+
+      drive.followTrajectorySequenceAsync(trajectory0);
+
+      while (opModeIsActive() && !isStopRequested()) {
+
+         switch (driveEnum) {
+            case TRAJECTORY_0:
+               if (!drive.isBusy() && liftEnum == LIFT_ENUM.IDLE) {
+                  drive.followTrajectorySequenceAsync(trajectory1);
+                  driveEnum = DRIVE_ENUM.TRAJECTORY_1;
+               }
+               break;
+            case TRAJECTORY_1:
+               if (!drive.isBusy()) {
+                  lift.setClawPosition(CLAW_POSITION_OPEN);
+                  sleep(500);
+                  drive.followTrajectorySequenceAsync(trajectory2);
+                  driveEnum = DRIVE_ENUM.TRAJECTORY_2;
+               }
+               break;
+            case TRAJECTORY_2:
+               if (!drive.isBusy() && liftEnum == LIFT_ENUM.IDLE) {
+                  sleep(2250);
+                  lift.setCarouselPower(0);
+                  drive.followTrajectorySequenceAsync(trajectory3);
+                  driveEnum = DRIVE_ENUM.TRAJECTORY_3;
+               }
+               break;
+            case TRAJECTORY_3:
+               if (!drive.isBusy()) {
+                  lift.setClawPosition(0.5);
+                  sleep(500);
+                  drive.followTrajectorySequenceAsync(trajectory4);
+                  driveEnum = DRIVE_ENUM.TRAJECTORY_4;
+               }
+               break;
+            case TRAJECTORY_4:
+               if (!drive.isBusy() && liftEnum == LIFT_ENUM.IDLE) {
+                  lift.setArmPosition(ARM_POSITION_OPEN);
+                  sleep(1000);
+                  lift.setClawPosition(CLAW_POSITION_OPEN);
+                  sleep(500);
+                  drive.followTrajectorySequenceAsync(trajectory5);
+                  driveEnum = DRIVE_ENUM.TRAJECTORY_5;
+               }
+               break;
+            case TRAJECTORY_5:
+               if (!drive.isBusy()) {
+                  lift.setClawPosition(CLAW_POSITION_CLOSED);
+                  LIFT_DISTANCE = 0;
+                  liftEnum = LIFT_ENUM.DOWN;
+                  driveEnum = DRIVE_ENUM.IDLE;
+               }
+               break;
+            case IDLE:
+               if (liftEnum == LIFT_ENUM.IDLE)
+               requestOpModeStop();
+               break;
+         }
+
+         switch (liftEnum) {
+            case UP: {
+               if (lift.getLiftPosition() >= LIFT_DISTANCE) {
+                  lift.setPower(0);
+                  liftEnum = LIFT_ENUM.IDLE;
+               } else
+                  lift.setPower(-LIFT_POWER);
+               break;
+            }
+            case DOWN: {
+               if (lift.getLiftPosition() <= LIFT_DISTANCE) {
+                  lift.setPower(0);
+                  lift.setClawPosition(CLAW_POSITION_OPEN);
+                  liftEnum = LIFT_ENUM.IDLE;
+               } else
+                  lift.setPower(LIFT_POWER);
+               break;
+            }
+            case IDLE:
+               break;
+         }
+
+         switch (intakeEnum) {
+            case FORWARD:
+               intake.setVelocity(INTAKE_POWER, DcMotorSimple.Direction.REVERSE);
+               if (intake.distance() < 5)  {
+                  intakeEnum = INTAKE_ENUM.REVERSE;
+               }
+               break;
+            case RUN:
+               intake.setVelocity(INTAKE_POWER, DcMotorSimple.Direction.REVERSE);
+               break;
+            case REVERSE:
+               intake.setVelocity(INTAKE_POWER, DcMotorSimple.Direction.FORWARD);
+               break;
+            case IDLE:
+               intake.setVelocity(0, DcMotorSimple.Direction.FORWARD);
+               break;
+         }
+
+         drive.update();
+         Pose2d poseEstimate = drive.getPoseEstimate();
+
+         telemetry.addData("x", poseEstimate.getX());
+         telemetry.addData("y", poseEstimate.getY());
+         telemetry.addData("heading", poseEstimate.getHeading());
+         telemetry.addData("range", String.format("%.01f cm", intake.distance()));
+         telemetry.update();
+      }
+   }
+}
